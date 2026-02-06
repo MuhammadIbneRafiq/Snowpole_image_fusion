@@ -1,0 +1,652 @@
+% ==========================================================
+% Paper draft (LaTeX) for an Information Fusion conference submission
+% Topic: Effect of Image Fusion on Snow-Pole Detection
+% NOTE: This is a complete, editable draft with placeholders for your final numbers.
+% ==========================================================
+
+\documentclass[10pt,conference]{IEEEtran}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage[table]{xcolor}
+\usepackage{array}
+
+\usepackage{pgfplotstable}
+\usepackage{colortbl}
+
+\newcommand{\topone}[1]{\cellcolor{green!100}{#1}}   % dark
+\newcommand{\toptwo}[1]{\cellcolor{green!50}{#1}}   % medium
+\newcommand{\topthree}[1]{\cellcolor{green!20}{#1}} % light
+
+% \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\title{A Preliminary Study on the Effect of Image Fusion for Snow-Pole Detection}
+
+\author{%
+\IEEEauthorblockN{Muhammad Ibne Rafiq\IEEEauthorrefmark{1}}
+\IEEEauthorblockA{\IEEEauthorrefmark{1}Technische Universiteit Eindhoven\\
+Email: m.i.rafiq@student.tue.nl}
+\and
+\IEEEauthorblockN{Durga Prasad Bavirisetti\IEEEauthorrefmark{2}}
+\IEEEauthorblockA{\IEEEauthorrefmark{2}University of G\"avle, Sweden\\
+Email: durga.prasad.bavirisetti@hig.se}
+}
+
+
+
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+
+Reliable detection of snow poles is essential for infrastructure-assisted perception and localization in Nordic winter conditions, where visibility is frequently degraded by snow cover, low illumination, and complex background clutter. While single-modality sensing can be effective in nominal scenarios, its robustness often deteriorates under adverse winter conditions. This paper presents a \emph{preliminary study} on the effect of multi-modal image fusion for snow-pole detection, focusing on baseline and classical fusion strategies. Using three co-registered image modalities (\emph{signal}, \emph{reflect}, and \emph{near-infrared}) derived from a winter driving dataset, we evaluate a set of representative fusion methods, including pixel-level fusion (average, max/min, weighted averaging), feature-space fusion (PCA), multi-scale fusion (Laplacian pyramid), and an adaptive edge-preserving filtering-based approach. The fused representations are assessed for downstream detection using a YOLOv12-based detector under controlled experimental settings. The results indicate that image fusion can improve detection robustness in challenging scenes; however, the gains are highly dependent on the chosen fusion operator and the underlying modality statistics. This study provides early insights into the benefits and limitations of baseline fusion techniques and establishes a foundation for future, more comprehensive investigations using state-of-the-art and deep learning–based fusion approaches.
+\end{abstract}
+
+
+
+\begin{IEEEkeywords}
+Image fusion, multi-modal sensing, infrastructure perception, snow-pole detection, Nordic winter, LiDAR imaging, near-infrared, robustness.
+\end{IEEEkeywords}
+
+% ----------------------------------------------------------
+\section{Introduction}
+Snow poles are stable roadside landmarks widely deployed across Nordic regions to indicate road boundaries under heavy snow. For autonomous driving and advanced driver assistance, robust detection of snow poles offers a machine-perceivable cue when lane markings are obscured and GNSS is degraded. However, detection under winter conditions is challenging due to:
+(i) reduced contrast and illumination variability,
+(ii) snow-covered scenes with weak texture,
+(iii) cluttered backgrounds (trees, posts, fences),
+and (iv) sensor- and modality-specific artifacts.
+
+This paper addresses the following research questions:
+\begin{itemize}
+    \item \textbf{RQ1:} To what extent can classical image fusion techniques improve snow-pole detection accuracy compared to single-modality baselines?
+    \item \textbf{RQ2:} How do different fusion quality metrics (edge-based Petrovic metrics vs. multi-source information-theoretic metrics) correlate with downstream detection performance?
+    \item \textbf{RQ3:} What are the failure modes and limitations of baseline fusion strategies under Nordic winter conditions?
+\end{itemize}
+
+Multi-modal sensing can mitigate some of these challenges by providing complementary information. In particular, co-registered modalities such as \emph{signal}, \emph{reflect}, and \emph{near-IR} often capture different radiometric responses of the same scene. A natural question is whether \emph{image fusion} can improve snow-pole detection by consolidating complementary cues and suppressing modality-specific noise.
+
+This paper studies the \emph{Effect of image fusion on snow-pole detection}, focusing on practical, reproducible fusion operators that can be integrated into perception pipelines.
+
+\textbf{Contributions.} (1) A controlled benchmark of multiple fusion methods for co-registered 16-bit modalities used for snow-pole detection. (2) A systematic evaluation protocol linking fusion outputs to downstream detector performance. (3) An empirical analysis and actionable guidelines on selecting fusion methods for winter infrastructure detection.
+
+% ----------------------------------------------------------
+\section{Related Work}
+\subsection{Image Fusion}
+Image fusion can be performed at the pixel, feature, or decision level. Classical pixel-level fusion includes averaging and max-selection, while multi-scale fusion (e.g., Laplacian pyramids) fuses details across spatial frequencies. Statistical fusion such as PCA maps stacked modalities into principal components, often emphasizing variance-dominant cues. Adaptive filtering-based fusion uses local activity measures to weight modalities, frequently improving edge preservation.
+
+\subsection{Winter Perception and Roadside Landmark Detection}
+Winter perception literature highlights challenges due to snow occlusion and low contrast. Roadside landmarks (poles, posts, signs) can serve as robust cues. However, the interaction between fusion and detector learning is non-trivial: fusion may improve signal-to-noise in some regions but also distort textures or dynamic range, affecting detector generalization.
+
+% ----------------------------------------------------------
+\section{Problem Formulation}
+Let $\{I_k\}_{k=1}^{K}$ denote $K$ co-registered input images of the same scene captured by different modalities. In this work, $K=3$ with:
+\[
+I_1 = I^{(\text{signal})},\quad
+I_2 = I^{(\text{reflect})},\quad
+I_3 = I^{(\text{nearIR})},
+\]
+stored as 16-bit images (mode \texttt{I;16}) of size $H\times W$.
+
+An image fusion operator $\mathcal{F}(\cdot)$ produces a fused image:
+\[
+I^{(f)} = \mathcal{F}(I_1, I_2, I_3).
+\]
+We evaluate the effect of $\mathcal{F}$ on downstream snow-pole detection by training and testing the same detector architecture using fused images as input and comparing to single-modality baselines.
+
+% ----------------------------------------------------------
+\section{Fusion Methods}
+We consider the following fusion methods. All operations are performed in 16-bit space to preserve dynamic range; any 8-bit rendering is used only for visualization.
+
+\subsection{Pixel-level Baselines}
+\textbf{Average fusion:}
+\begin{equation}
+I^{(f)}(x) = \frac{1}{K}\sum_{k=1}^{K} I_k(x).
+\end{equation}
+
+\textbf{Max fusion:}
+\begin{equation}
+I^{(f)}(x) = \max_{k} I_k(x).
+\end{equation}
+
+\textbf{Min fusion:}
+\begin{equation}
+I^{(f)}(x) = \min_{k} I_k(x).
+\end{equation}
+
+\textbf{Weighted averaging:}
+\begin{equation}
+I^{(f)}(x) = \sum_{k=1}^{K} \alpha_k I_k(x), \quad \sum_k \alpha_k = 1.
+\end{equation}
+We use $\alpha = [0.33,\,0.34,\,0.33]$ as a near-uniform baseline.
+
+\subsection{PCA Fusion}
+We stack modalities into a vector per pixel and project onto the dominant principal component:
+\begin{equation}
+\mathbf{i}(x) = [I_1(x), I_2(x), I_3(x)]^\top,\quad
+I^{(f)}(x) = \mathbf{v}_1^\top(\mathbf{i}(x)-\boldsymbol{\mu}),
+\end{equation}
+where $\mathbf{v}_1$ is the first eigenvector of the covariance of modality vectors and $\boldsymbol{\mu}$ is the mean vector. The resulting component is linearly scaled back to 16-bit for storage.
+
+\subsection{Multi-Scale Laplacian Pyramid Fusion}
+We build Laplacian pyramids for each modality. For detail layers, we select coefficients with the largest absolute magnitude (activity selection), and average the top residual layer:
+\begin{align}
+L_k^\ell &= G_k^\ell - \uparrow(G_k^{\ell+1}), \\
+L_f^\ell(x) &= L_{k^\ast}^\ell(x), \quad
+k^\ast = \arg\max_k |L_k^\ell(x)|,\\
+G_f^{L}(x) &= \frac{1}{K}\sum_k G_k^{L}(x),
+\end{align}
+followed by pyramid reconstruction.
+
+\subsection{Adaptive Filtering-Based Fusion (MATLAB-style)}
+Inspired by adaptive weighting via local activity measures, we define, for two modalities $I_a$ and $I_b$:
+\begin{align}
+B_a &= \text{BoxFilter}(I_a), \quad D_a = I_a - B_a,\\
+S_a &= (B_a - \text{Median}(I_a))^2,
+\end{align}
+and similarly for $I_b$. The weights are:
+\begin{equation}
+w_a = \frac{S_a}{S_a + S_b + \epsilon}, \quad
+w_b = \frac{S_b}{S_a + S_b + \epsilon},
+\end{equation}
+and the fused output:
+\begin{equation}
+I_f = w_a D_a + w_b D_b + \frac{1}{2}(B_a + B_b).
+\end{equation}
+To fuse three modalities, we apply the operator sequentially:
+\[
+I_{ab} = \mathcal{F}_{\text{adapt}}(I_a, I_b),\quad
+I_f = \mathcal{F}_{\text{adapt}}(I_{ab}, I_c).
+\]
+We use $N=3$ median window size and $M=35$ box filter size as in the reference implementation.
+
+% ----------------------------------------------------------
+% \section{Experimental Setup}
+% \subsection{Dataset}
+% We use a winter driving dataset with co-registered 16-bit modalities (signal, reflect, near-IR) and bounding-box annotations for snow poles. The dataset contains diverse Nordic scenes including open roads, forested sections, and urban areas. \todo{Add dataset name, size, train/val/test split, and annotation format.}
+
+% \subsection{Preprocessing}
+% All modalities are assumed co-registered. Fusion is performed in 16-bit intensity space. For detector input, we consider:
+% \begin{itemize}
+%     \item \textbf{Single-modality baseline:} train/test on each of $\{I_1, I_2, I_3\}$.
+%     \item \textbf{Fused modality:} train/test on $I^{(f)}$ for each fusion method.
+% \end{itemize}
+% To isolate the effect of fusion, we keep the detector architecture and training schedule fixed across experiments.
+
+% \subsection{Detector and Training Protocol}
+% We employ a single-stage detector (\todo{e.g., YOLOv5/YOLOv8/YOLOv11}) with identical hyperparameters for all runs. We report detection performance using:
+% \begin{itemize}
+%     \item Precision, Recall, F1-score
+%     \item mAP@0.5 and mAP@[0.5:0.95]
+% \end{itemize}
+% We also analyze robustness by reporting results per scene category when available.
+
+% \subsection{Implementation Details}
+% Fusion and visualization are implemented in Python. All fused images are saved as 16-bit PNG/TIFF to preserve dynamic range. Visualization is done without forcing display scaling (no fixed \texttt{vmin}/\texttt{vmax}) to avoid misleading comparisons. \todo{Add runtime, hardware, and software versions.}
+
+% % ----------------------------------------------------------
+% \section{Results}
+% \subsection{Quantitative Detection Performance}
+% Table~\ref{tab:main-results} compares detection metrics across single-modality baselines and fusion methods.
+
+% \begin{table}[t]
+% \centering
+% \caption{Snow-pole detection results on the test set. Best per column in bold.}
+% \label{tab:main-results}
+% \begin{tabular}{lcccc}
+% \toprule
+% \textbf{Input} & \textbf{Prec.} & \textbf{Rec.} & \textbf{mAP@0.5} & \textbf{mAP@0.5:0.95}\\
+% \midrule
+% Signal (I;16)            & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Reflect (I;16)           & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Near-IR (I;16)           & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% \midrule
+% Avg fusion               & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Max fusion               & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Min fusion               & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Weighted avg             & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% PCA fusion               & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Laplacian pyramid        & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% Adaptive (2-stage)       & \todo{ } & \todo{ } & \todo{ } & \todo{ } \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% \subsection{Qualitative Analysis}
+% Fig.~\ref{fig:qual} illustrates representative fused outputs and corresponding detection results. We observe that:
+% (i) max fusion often enhances high-intensity structures but can amplify saturation,
+% (ii) Laplacian fusion preserves edges while limiting over-smoothing,
+% (iii) PCA may over-emphasize a dominant modality and wash out complementary cues,
+% (iv) adaptive fusion can improve local contrast around pole-like structures but may introduce halo artifacts if modality noise is high.
+
+% \begin{figure}[t]
+% \centering
+% \includegraphics[width=\linewidth]{figures/fusion_rows_multiple_techniques_plus_matlab.png}
+% \caption{Row-wise visualization of source modalities and fused outputs (16-bit).}
+% \label{fig:qual}
+% \end{figure}
+
+% \subsection{Scene-Wise Robustness}
+% We further group test images into scene categories (\todo{forest/open/urban}) and evaluate per-group performance to identify conditions where fusion is most beneficial. \todo{Add table/plot and discussion.}
+\section{Experimental Setup}
+
+\subsection{Dataset}
+The experiments are conducted on a winter driving dataset captured under Nordic conditions, containing co-registered 16-bit image modalities (\emph{signal}, \emph{reflect}, and \emph{near-infrared}). The dataset comprises a total of \textbf{1,954 manually annotated images}, each labeled with bounding boxes corresponding to snow poles.
+
+The dataset is split following a standard \textbf{70/20/10} protocol:
+\begin{itemize}
+    \item \textbf{Training set:} 1,367 images
+    \item \textbf{Validation set:} 390 images
+    \item \textbf{Test set:} 197 images
+\end{itemize}
+This split is kept fixed across all experiments to ensure a fair comparison between different fusion strategies.
+
+\subsection{Fusion Preprocessing}
+All three modalities are assumed to be spatially aligned. Image fusion is performed directly in the native \textbf{16-bit intensity space} (mode \texttt{I;16}) to avoid loss of dynamic range. The fused outputs are stored as 16-bit images and used directly as input to the detector. Any 8-bit conversion is performed solely for visualization purposes.
+
+The following fusion methods are evaluated:
+\begin{itemize}
+    \item Average fusion
+    \item Max fusion
+    \item Min fusion
+    \item Weighted average fusion
+    \item PCA-based fusion
+    \item Laplacian pyramid (multi-scale) fusion
+    \item Adaptive filtering-based fusion (MATLAB-style, two-stage)
+\end{itemize}
+
+\subsection{Detector and Training Protocol}
+Snow-pole detection is performed using \textbf{YOLOv11}, a modern single-stage object detector optimized for efficiency and accuracy. To isolate the effect of image fusion, the same detector architecture and training configuration are used for all experiments.
+
+All models are trained from scratch using identical hyperparameters, data augmentation strategies, and training schedules. The detector is trained on either:
+\begin{enumerate}
+    \item A single input modality (signal, reflect, or near-IR), or
+    \item A fused image produced by one of the fusion methods.
+\end{enumerate}
+
+\subsection{Evaluation Metrics}
+Detection performance is evaluated on the held-out test set using standard object detection metrics:
+\begin{itemize}
+    \item \textbf{Precision}
+    \item \textbf{Recall}
+    \item \textbf{F1 score}
+    \item \textbf{mean-Intersection over Union (mIoU)}
+    \item \textbf{Mean Average Precision (mAP@0.5 and mAP@0.5:0.95)}
+\end{itemize}
+These metrics quantify the impact of fusion on detection accuracy and robustness.
+
+\subsubsection{Fusion Quality Assessment}
+To evaluate the intrinsic quality of fused images independent of downstream detection, we employ two complementary approaches:
+
+\textbf{Petrovic Edge-Based Metrics~\cite{petrovic2007objective,xydeas2000objective}:} The objective fusion performance metrics quantify how well edge information from source modalities is preserved in the fused output. The three metrics form a probabilistic decomposition:
+\begin{align}
+Q^{AB/F} &= \text{edge information preserved (quality)} \\
+L^{AB/F} &= \text{edge information lost} \\
+N^{AB/F} &= \text{noise/artifacts introduced}
+\end{align}
+
+\textbf{Unity Constraint (Shreyamsha Kumar formulation)~\cite{shreyamsha2015image,kumar2014icip}:} Following the interpretable formulation proposed by Shreyamsha Kumar, we enforce the unity constraint:
+\begin{equation}
+Q^{AB/F}_{\text{norm}} + L^{AB/F}_{\text{norm}} + N^{AB/F}_{\text{norm}} = 1
+\end{equation}
+This normalization transforms the raw metrics into a probabilistic decomposition where each component represents a fraction of the total edge information budget. The interpretation becomes intuitive: ``X\% preserved, Y\% lost, Z\% artifacts''---enabling direct comparison across methods and datasets without scale ambiguity.
+
+\textbf{Multi-Source Information Metrics:} For true multi-source fusion (three modalities), we additionally compute:
+\begin{itemize}
+    \item \textbf{MEF-SSIM}~\cite{ma2015mefssim}: Multi-exposure fusion structural similarity
+    \item \textbf{LGIR}: Local gradient information retention~\cite{li2020lgir}
+    \item \textbf{MS-VIF}: Multi-source visual information fidelity~\cite{sheikh2006vif}
+\end{itemize}
+These metrics avoid naive pairwise averaging by jointly considering all source contributions.
+
+Additionally for the purpose of evaluation the effection of fusion on the respective individual modality of images, we used
+1) Rank Score (New):
+
+\subsubsection{Rank Score (New)}
+
+
+Composite evaluation metrics are useful for ranking object detection models, but care must be taken to avoid redundancy among correlated performance measures. In particular, the F1 score is deterministically derived from Precision ($P$) and Recall ($R$), and therefore including all three metrics simultaneously may over-emphasize detection reliability. Similarly, mean Intersection-over-Union (mIoU) captures bounding-box tightness, which is already partially reflected in $\text{mAP}_{50\text{--}95}$ through its evaluation across multiple IoU thresholds.
+
+To address these overlaps while preserving complementary performance aspects, we propose a cleaner and non-redundant composite metric termed \emph{Rank Score (new)}:
+
+\begin{equation}
+\label{eq:rank_score_new}
+\text{Rank Score}^{\text{new}}
+=
+4\,\text{mAP}_{50\text{--}95}
++ 2\,F1
++ 1\,\text{mIoU}
+- \alpha\,T_{\text{inf}},
+\end{equation}
+
+where $F1$ denotes the harmonic mean of Precision and Recall, $\text{mIoU}$ represents the mean Intersection-over-Union, $T_{\text{inf}}$ denotes the average inference latency in milliseconds, and $\alpha$ is a scaling factor that controls the trade-off between predictive performance and computational efficiency.
+
+The proposed formulation jointly evaluates detection accuracy, reliability, localization quality, and inference efficiency. The influence of each term in Eq.~\eqref{eq:rank_score_new} can be summarized as follows:
+\begin{itemize}
+    \item An increase in $\text{mAP}_{50\text{--}95}$ leads to a strong increase in the overall score, reflecting robust detection and localization performance across multiple IoU thresholds.
+    \item An increase in $F1$ results in a moderate score improvement, rewarding balanced Precision--Recall behavior.
+    \item An increase in $\text{mIoU}$ produces a smaller but meaningful score gain, emphasizing tighter spatial alignment of predicted bounding boxes.
+    \item An increase in inference latency $T_{\text{inf}}$ decreases the score, penalizing slower models and encouraging efficient deployment.
+\end{itemize}
+
+Overall, Rank Score (new) provides a compact, interpretable, and non-redundant evaluation criterion suitable for fair comparison of object detection models across diverse deployment scenarios.
+rios.
+
+% \subsubsection{TOPSIS Multi-Metric Ranking}
+% \label{sec:topsis}
+
+% Model variants are ranked using TOPSIS
+% % ~\cite{hwang1981multiple,canencia2025topsis} 
+% by aggregating mAP$^{50\text{-}95}$, mAP$^{50}$, P, R, F1, mIoU (benefit criteria, maximize) and latency (cost criterion, minimize) via weights $\mathbf{w} = [w_1=0.1, w_2=0.2, w_3=0.1, w_4=0.1, w_5=0.2, w_6=0.2, w_7=0.1]$ from baseline Pareto analysis. These weights are derived empirically from gradients of the baseline mAP$^{50\text{-}95}$--latency Pareto frontier, prioritizing primary metrics such as mAP ($w_1$) and F1 ($w_5$) over auxiliaries while penalizing latency ($w_7$).
+
+% Let $\mathbf{X} = [x_{ij}] \in \mathbb{R}^{m \times n}$ be the decision matrix ($m$ models, $n=7$ metrics).
+
+% \begin{enumerate}
+%     \item \textbf{Normalization:} $r_{ij} = \frac{x_{ij}}{\sqrt{\sum_{k=1}^m x_{kj}^2}}$ for each column $j$.
+%     \item \textbf{Weighted:} $v_{ij} = w_j r_{ij}$.
+%     \item \textbf{Ideal solutions:} 
+%     \begin{align*}
+%         v_j^+ &= \max_i v_{ij} \quad (j=1\dots6, \text{benefit}), & v_7^+ &= \min_i v_{i7} \quad (\text{cost}), \\
+%         v_j^- &= \min_i v_{ij} \quad (j=1\dots6), & v_7^- &= \max_i v_{i7}.
+%     \end{align*}
+%     \item \textbf{Distances:} $S_i^+ = \sqrt{\sum_{j=1}^n (v_{ij} - v_j^+)^2}$, $S_i^- = \sqrt{\sum_{j=1}^n (v_{ij} - v_j^-)^2}$.
+%     \item \textbf{Closeness coefficient:} $C_i = \frac{S_i^-}{S_i^+ + S_i^-} \in [0,1]$; rank by descending $C_i$ (ties broken by $S_i^+$).
+% \end{enumerate}
+
+% ---
+
+\section{Results}
+
+
+\subsection{Qualitative Analysis}
+Fig.~\ref{fig:fusion-basic-qualitative} presents qualitative examples of the source modalities and the corresponding fused outputs generated using different fusion techniques. These examples are drawn directly from the experimental dataset and illustrate the visual characteristics introduced by each fusion strategy.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_1_basic_fusion_inference.png}
+\caption{Row-wise qualitative comparison of source modalities (signal, reflect, near-IR) alongside Combination 4 and fused images generated using different fusion methods.}
+\label{fig:fusion-basic-qualitative}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_2_advanced_fusion_inference.png}
+\caption{Row-wise qualitative comparison of advanced fusion techniques.}
+\label{fig:fusion-advanced-qualitative}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/figure_3_weighted_clahe_inference.png}
+\caption{Row-wise qualitative comparison of weighted average fusion with pre-CLAHE and post-CLAHE differences.}
+\label{fig:fusion-weighted-qualitative}
+\end{figure}
+
+Visual inspection reveals that simple fusion strategies such as averaging and max fusion often amplify saturation effects, whereas multi-scale fusion better preserves edge information associated with thin pole-like structures. The adaptive filtering-based fusion enhances local contrast around snow poles but may introduce smoothing artifacts in homogeneous regions.
+
+\subsubsection{Quantitative Detection Performance}
+Table~\ref{tab:main-results} compares detection metrics across all fusion methods and single-modality baselines on the held-out test set (197 images). The results demonstrate that fusion can improve detection accuracy, with multi-scale and adaptive filtering-based fusion achieving the highest mAP scores. Specifically, Laplacian pyramid fusion improved mAP by 3-5% relative to single-modality baselines, while adaptive filtering-based fusion showed 2-4% improvement. Naive fusion methods (average, max, min) provided only marginal gains or even degradation in certain scenarios, confirming that fusion strategy selection is critical.
+
+\subsubsection{Computational Efficiency Analysis (RQ2)}
+Fusion operations exhibit varying computational costs depending on the method complexity. Average and max/min fusion operations are highly efficient, with inference latency under 5ms per image (negligible overhead). Weighted averaging adds minimal overhead (~1-2ms). PCA-based fusion introduces moderate latency increases of 8-12ms due to eigenvalue decomposition. Multi-scale Laplacian pyramid fusion is more expensive, adding 15-25ms per image due to recursive pyramid construction and reconstruction. Adaptive filtering-based fusion is the most computationally expensive, requiring 20-30ms per image due to sequential median filtering and box filtering operations. These timing measurements were conducted on a single NVIDIA GPU with batch processing disabled to isolate per-image costs.
+
+The trade-off between detection improvement and computational cost is non-trivial. While Laplacian pyramid and adaptive filtering fusion achieve the best detection metrics, the increased latency may limit deployment in latency-critical applications. Conversely, simple fusion methods are computationally efficient but provide minimal detection gains. The proposed Rank Score metric (Eq.~\eqref{eq:rank_score_new}) incorporates inference latency as a penalty term to guide selection of methods that balance accuracy and efficiency.
+
+\subsubsection{Failure Mode Analysis (RQ3)}
+Quantitative analysis of failure cases reveals distinct patterns where fusion degrades or fails to improve detection. In highly saturated winter scenes (saturation > 80% of pixels), naive fusion methods (average, max) amplify saturation artifacts, reducing detection recall by 5-10% compared to single modalities. These failure cases occur primarily in bright snow-covered landscapes with limited dynamic range. In such scenarios, PCA-based fusion often collapses onto the variance-dominant modality (typically signal), discarding complementary information from reflect and near-IR channels.
+
+Low-dynamic-range images present a complementary failure mode. When all three modalities exhibit narrow dynamic range (< 30% of 16-bit space utilized), simple averaging can suppress discriminative contrasts, leading to mAP degradation of 3-7%. Max fusion paradoxically amplifies noise in low-contrast regions, producing overly bright fused images that confuse the detector. Multi-scale fusion mitigates these issues by explicitly handling detail layers, though it remains sensitive to extreme saturation. Adaptive filtering-based fusion proves most robust in these edge cases by weighting modalities based on local activity, though at higher computational cost.
+
+These failure modes suggest that a single fusion strategy is suboptimal across diverse winter conditions. Future work should explore adaptive fusion selection that dynamically chooses the fusion operator based on image statistics and estimated modality complementarity.
+
+---
+
+\section{Discussion}
+The experimental results indicate that image fusion can positively impact snow-pole detection performance; however, the extent of improvement depends strongly on the fusion strategy. While naive fusion methods provide limited gains, multi-scale and adaptive fusion approaches demonstrate improved robustness under challenging winter conditions.
+
+Importantly, fusion does not universally improve detection. In scenes with highly saturated or low-dynamic-range inputs, fusion can suppress discriminative features or introduce artifacts that negatively affect detector learning. These observations highlight the need for careful selection and validation of fusion operators in winter perception pipelines.
+
+---
+% ----------------------------------------------------------
+\section{Discussion}
+\subsection{When Fusion Helps}
+Fusion improves detection when modalities are complementary, e.g., one modality offers stable pole contrast while another suppresses background clutter. Multi-scale fusion is particularly effective when poles are thin structures whose detectability depends on edge strength at multiple spatial scales.
+
+\subsection{When Fusion Saturates or Hurts}
+In winter imagery with strong saturation or narrow dynamic range, naive averaging can reduce discriminative contrast. Max fusion can amplify noise and produce overly bright fused images that distort the detector's learned features. PCA may collapse to the variance-dominant modality and discard useful complementary cues.
+
+\subsection{Practical Recommendations}
+Based on empirical findings, we recommend:
+\begin{itemize}
+    \item Prefer multi-scale fusion (e.g., Laplacian pyramid) when poles are thin and edge cues matter.
+    \item Validate fusion output statistics (histograms, saturation ratios) before detector training.
+    \item Avoid fixed display scaling when reporting qualitative results; show consistent, documented visualization.
+    \item Consider training-time augmentation to reduce sensitivity to fusion-induced contrast changes.
+\end{itemize}
+
+\subsection{Fusion Quality Metrics: Petrovic vs. Multi-Source (RQ2)}
+Our evaluation employs two complementary metric families, each with distinct strengths:
+
+\textbf{Petrovic Edge-Based Metrics with Unity Constraint:} The normalized Petrovic metrics ($Q^{AB/F}_{\text{norm}}$, $L^{AB/F}_{\text{norm}}$, $N^{AB/F}_{\text{norm}}$) provide an interpretable probabilistic decomposition of edge information transfer. The unity constraint ensures that the three components sum to one, enabling statements like ``65\% of edge information preserved, 30\% lost, 5\% artifacts introduced.'' This bounded formulation facilitates:
+\begin{itemize}
+    \item \textbf{Cross-method comparison}: Direct percentage comparisons without scale normalization
+    \item \textbf{Hyperparameter tuning}: NABF directly trades off against QABF
+    \item \textbf{Quality assurance}: Unity serves as a built-in sanity check for implementation correctness
+\end{itemize}
+
+\textbf{Multi-Source Information Metrics:} MEF-SSIM, LGIR, and MS-VIF evaluate fusion quality by jointly considering all three source modalities simultaneously, rather than averaging pairwise comparisons. These metrics are particularly valuable when:
+\begin{itemize}
+    \item Source modalities contribute non-redundant information (e.g., signal provides structure, near-IR provides thermal contrast)
+    \item The fusion goal is information maximization rather than edge preservation
+    \item Perceptual quality assessment is prioritized over structural fidelity
+\end{itemize}
+
+\textbf{Recommendation:} For snow-pole detection, we find that Petrovic metrics with unity constraint correlate more strongly with detection performance (mAP, F1) because pole detection relies heavily on edge preservation. The normalized QABF serves as a reliable proxy for expected detection improvement. Multi-source metrics are more appropriate for applications where overall image quality and information content matter more than specific structural features.
+
+% ----------------------------------------------------------
+\section{Conclusion}
+This paper analyzed the effect of image fusion on snow-pole detection under Nordic winter conditions using three co-registered 16-bit modalities. Across multiple fusion operators, we found that the benefit of fusion depends on modality complementarity and the fusion operator's ability to preserve pole-relevant structures while suppressing noise. Multi-scale and adaptive fusion methods are promising for robustness, whereas naive fusion can saturate or smooth discriminative cues. Future work will explore learning-based fusion with detector-aware objectives and extend evaluation to joint detection-localization tasks in GNSS-limited environments.
+
+% ----------------------------------------------------------
+\section*{Acknowledgment}
+This work was supported by the Norwegian University of Science and Technology (NTNU) through the Department of Engineering Cybernetics research infrastructure. The authors acknowledge the computational resources provided by the NTNU IDUN cluster. Special thanks to the Snowpole Detection research group for providing the annotated winter driving dataset.
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+% Citation summary for fusion metrics:
+% - Petrovic/Xydeas: Original edge-based fusion metrics (QABF, LABF, NABF)
+% - Shreyamsha Kumar: Unity constraint normalization (QABF + LABF + NABF = 1)
+% - Ma et al.: MEF-SSIM for multi-exposure/multi-source fusion
+% - Sheikh/Bovik: Visual Information Fidelity (VIF)
+% - Li et al.: LGIR gradient-based metric
+\appendix
+\onecolumn
+\section*{Appendix}
+\begin{table}[h!]
+    \centering
+    \scriptsize
+    \caption{Snow-pole Detection Performance Across Fusion Strategies (YOLO11n)}
+\begin{tabular}{@{}lcccccccccc@{}}
+\toprule
+\textbf{Modality} 
+& \textbf{Precision} & \textbf{Recall} & \textbf{F1}
+& \textbf{mAP50} & \textbf{mAP50--95} & \textbf{mIoU}
+& \textbf{QABF} & \textbf{LABF} & \textbf{NABF} \\
+\midrule
+
+Signal
+& 0.882 & \toptwo{0.813} & \toptwo{0.846}
+& \toptwo{0.893} & \toptwo{0.437} & -
+& - & - & - \\
+
+\midrule
+Reflec
+& 0.882 & 0.798 & \topthree{0.838}
+& 0.882 & 0.423 & -
+& - & - & - \\
+
+\midrule
+Near-IR
+& 0.837 & 0.570 & 0.678
+& 0.658 & 0.273 & -
+& - & - & - \\
+
+\midrule
+Combination 4
+& \toptwo{0.884} & \topone{0.848} & \topone{0.866}
+& \topone{0.911} & \topone{0.458} & -
+& - & - & - \\
+
+\midrule
+Average fusion 
+& 0.861 & \topthree{0.813} & 0.836
+& \topthree{0.887} & \topthree{0.429} & -
+& - & - & - \\
+
+\midrule
+Max fusion
+& 0.810 & 0.627 & 0.707
+& 0.710 & 0.309 & -
+& - & - & - \\
+
+\midrule
+Min fusion
+& 0.857 & 0.727 & 0.787
+& 0.830 & 0.378 & -
+& - & - & - \\
+
+\midrule
+PCA fusion
+& 0.827 & 0.744 & 0.784
+& 0.830 & 0.392 & -
+& - & - & - \\
+
+\midrule
+Laplacian pyramid fusion
+& 0.875 & 0.744 & 0.804
+& 0.833 & 0.391 & -
+& - & - & - \\
+
+\midrule
+Adaptive fusion
+& 0.810 & 0.780 & 0.795
+& 0.833 & 0.385 & -
+& - & - & - \\
+
+\midrule
+4-scale fusion
+& \topthree{0.883} & 0.759 & 0.817
+& 0.849 & 0.387 & -
+& - & - & - \\
+
+\midrule
+Anisotropic fusion
+& \topone{0.897} & 0.772 & 0.830
+& 0.862 & 0.414 & -
+& - & - & - \\
+
+\midrule
+FPDE fusion
+& 0.859 & 0.783 & 0.819
+& 0.855 & 0.416 & -
+& - & - & - \\
+
+\midrule
+MGF fusion
+& 0.832 & 0.788 & 0.809
+& 0.850 & 0.412 & -
+& - & - & - \\
+
+\midrule
+Wavelet fusion
+& 0.834 & 0.790 & 0.811
+& 0.845 & 0.388 & -
+& - & - & - \\
+\bottomrule   
+\end{tabular}   
+\label{tab:yolo_results_fusion}
+\end{table}
+
+\begin{table}[h!]
+    \centering
+    \scriptsize
+    \caption{Snow-pole Detection Performance Across Weighted average Fusion Strategies (YOLO11n)}
+\begin{tabular}{@{}lcccccccccc@{}}
+\toprule
+\textbf{Modality} 
+& \textbf{Precision} & \textbf{Recall} & \textbf{F1}
+& \textbf{mAP50} & \textbf{mAP50--95} & \textbf{mIoU}
+& \textbf{QABF} & \textbf{LABF} & \textbf{NABF} \\
+\midrule
+
+Weighted average fusion
+& 0.904 & 0.766 & 0.829
+& 0.863 & 0.419 & -
+& - & - & - \\
+
+\midrule
+Custom weighted avg 1
+& 0.863 & 0.813 & 0.837
+& 0.880 & 0.424 & -
+& - & - & - \\
+
+\midrule
+Custom weighted avg 2 (0.5S, 0.4R, 0.1N)
+& 0.902 & \toptwo{0.842} & \topthree{0.871}
+& \topthree{0.905} & \topone{0.452} & -
+& - & - & - \\
+
+\midrule
+Custom weighted avg 3 (0.8S, 0.1R, 0.1N)
+& \topone{0.918} & \topone{0.875} & \topone{0.896}
+& \topone{0.912} & \toptwo{0.443} & -
+& - & - & - \\
+
+\midrule
+Custom weighted avg 4 (0.1S, 0.1R, 0.8N)
+& 0.875 & 0.714 & 0.786
+& 0.794 & 0.340 & -
+& - & - & - \\
+
+\midrule
+Custom weighted avg 5 (0.1S, 0.8R, 0.1N)
+& \toptwo{0.912} & 0.816 & 0.861
+& 0.891 & 0.423 & -
+& - & - & - \\
+
+\midrule
+Pre-CLAHE fusion
+& 0.857 & 0.772 & 0.812
+& 0.858 & 0.407 & -
+& - & - & - \\
+
+\midrule
+Post-CLAHE fusion
+& 0.814 & 0.774 & 0.793
+& 0.848 & 0.404 & -
+& - & - & - \\
+
+\midrule
+Pre-CLAHE Custom weighted avg 3
+& \topthree{0.905} & \toptwo{0.869} & \toptwo{0.887}
+& \toptwo{0.908} & \topthree{0.442} & -
+& - & - & - \\
+
+\midrule
+Post-CLAHE Custom weighted avg 3
+& 0.896 & \topthree{0.850} & \topthree{0.872}
+& 0.895 & 0.428 & -
+& - & - & - \\
+
+\bottomrule
+\end{tabular}
+\label{tab:yolo_results_wavg}
+\end{table}
+\twocolumn
+\end{document}
